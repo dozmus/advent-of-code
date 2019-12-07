@@ -1,11 +1,11 @@
 import unittest
 
-from intcode_compiler import IntCodeCompiler
+from .intcode_compiler import IntCodeCompiler
 
 
 class MyTestCase(unittest.TestCase):
     def compile(self, code):
-        compiler = IntCodeCompiler(code)
+        compiler = IntCodeCompiler(code.split('\n'))
         return compiler.compile()
 
     def test_can_add_literals(self):

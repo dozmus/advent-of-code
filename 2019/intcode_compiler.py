@@ -1,10 +1,13 @@
+import os
+import sys
+
 from benchmark import benchmark
-from day5 import day5b
+from custom_io import read_lines
 
 
 class IntCodeCompiler:
     def __init__(self, code):
-        self.lines = code.split('\n')
+        self.lines = code
         self.variables = {}
         self.allocated_variables = {}
         self.variable_ptr = -1
@@ -137,18 +140,17 @@ class IntCodeCompiler:
 
 
 if __name__ == '__main__':
-    code = '''x = 2 + 4
-    print(x)
-    x = 2 * 4
-    print(x)
-    z = input()
-    print(z)
-    z = z * x
-    print(z)
-    z = 1
-    print(z)
-    z = x
-    print(z)'''
+    code_file = sys.argv[1]
+    code = read_lines(code_file)
+
     compiler = IntCodeCompiler(code)
     program = compiler.compile()
-    day5b(program)
+
+    str_program = [str(p) for p in program]
+    program_file_contents = ','.join(str_program)
+
+    output_file = os.path.splitext(code_file)[0] + '.ic'
+
+    with open(output_file, 'w') as fh:
+        fh.write(program_file_contents)
+

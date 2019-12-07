@@ -1,6 +1,12 @@
 # solutions from other people
 **/*-sol.py
 
+# intcode from 2019
+2019/*.ic
+2019/*.txt
+
+
+
 .idea/**
 
 # Created by .ignore support plugin (hsz.mobi)
