@@ -1,16 +1,20 @@
 import os
+import re
 import sys
 
 from benchmark import benchmark
 from custom_io import read_lines
 
 
+def is_str_an_int(s):
+    return re.match('^-?\\d+$', s)
+
+
 class IntCodeCompiler:
     def __init__(self, code):
         self.lines = code
-        self.variables = {}
-        self.allocated_variables = {}
-        self.variable_ptr = -1
+        self.variables = set()
+        self.allocated_variables = {}  # variable name to memory location
 
     @benchmark
     def compile(self):
@@ -24,23 +28,23 @@ class IntCodeCompiler:
                 lex = line.split(' ')
 
                 variable = lex[0]
-                var_ptr = self.get_or_create_variable_pointer(variable)
+                self.variables.add(variable)
 
                 l = lex[2]
                 r = lex[4]
 
-                if not l.isnumeric():
+                if not is_str_an_int(l):
                     if l not in self.variables:
                         raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {l}')
-                    l_val = self.variables[l]
+                    l_val = l
                 else:
                     opcode += 100
                     l_val = int(l)
 
-                if not r.isnumeric():
+                if not is_str_an_int(r):
                     if r not in self.variables:
                         raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {r}')
-                    r_val = self.variables[r]
+                    r_val = r
                 else:
                     opcode += 1000
                     r_val = int(r)
@@ -48,20 +52,21 @@ class IntCodeCompiler:
                 program.append(opcode)
                 program.append(l_val)
                 program.append(r_val)
-                program.append(var_ptr)
+                program.append(variable)
                 continue
 
             if line.startswith('print'):
                 opcode = 4
-                variable = line[6:-1]
+                argument = line[6:-1]
 
-                if not variable.isnumeric():
-                    if variable not in self.variables:
+                if not is_str_an_int(argument):
+                    if argument not in self.variables:
                         raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {variable}')
-                    value = self.variables[variable]
+                    value = argument
+                    self.variables.add(argument)
                 else:
                     opcode += 100
-                    value = int(variable)
+                    value = int(argument)
 
                 program.append(opcode)
                 program.append(value)
@@ -71,13 +76,12 @@ class IntCodeCompiler:
                 opcode = 3
                 variable = line.split('=')[0].strip()
 
-                if not variable.isnumeric():
-                    value = self.get_or_create_variable_pointer(variable)
-                else:
+                if is_str_an_int(variable):
                     raise Exception(f'{lineNo}: You cannot assign a value to a literal value {variable}')
 
+                self.variables.add(variable)
                 program.append(opcode)
-                program.append(value)
+                program.append(variable)
                 continue
 
             if '=' in line:  # assignment
@@ -85,18 +89,17 @@ class IntCodeCompiler:
                 lex = line.split(' ')
 
                 variable = lex[0].strip()
+                self.variables.add(variable)
 
-                if variable.isnumeric():
+                if is_str_an_int(variable):
                     raise Exception(f'{lineNo}: You cannot assign to a literal: {variable}')
-
-                var_ptr = self.get_or_create_variable_pointer(variable)
 
                 src = lex[2].strip()
 
-                if not src.isnumeric():
+                if not is_str_an_int(src):
                     if src not in self.variables:
                         raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {src}')
-                    src_val = self.variables[src]
+                    src_val = src
                 else:
                     opcode += 100
                     src_val = int(src)
@@ -106,7 +109,7 @@ class IntCodeCompiler:
                 program.append(opcode)
                 program.append(src_val)
                 program.append(0)
-                program.append(var_ptr)
+                program.append(variable)
                 continue
 
         program.append(99)
@@ -114,29 +117,18 @@ class IntCodeCompiler:
         self.update_variables_pointers(program)
         return program
 
-    def get_or_create_variable_pointer(self, variable):
-        if variable in self.variables:
-            return self.variables[variable]
-        else:
-            var_ptr = self.variable_ptr
-            self.variables[variable] = var_ptr
-            self.variable_ptr -= 1
-            return var_ptr
-
     def allocate_variables_pointers(self, program):
         start_ptr = len(program)
 
-        for variable in self.variables:
+        for variable in sorted(self.variables):  # for a consistent order, so our tests will not be fragile
             self.allocated_variables[variable] = start_ptr
-            program.append(0)  # initialize the variables to initial value 0
+            program.append(0)  # initialize variable memory locations to 0
             start_ptr += 1
 
     def update_variables_pointers(self, program):
-        for i, value in enumerate(program):
-            if value < 0:
-                variable = [k for k, v in self.variables.items() if v == value][0]
-                allocated_ptr = self.allocated_variables[variable]
-                program[i] = allocated_ptr
+        for i, val in enumerate(program):
+            if isinstance(val, str):
+                program[i] = self.allocated_variables[val]
 
 
 if __name__ == '__main__':
@@ -153,4 +145,3 @@ if __name__ == '__main__':
 
     with open(output_file, 'w') as fh:
         fh.write(program_file_contents)
-

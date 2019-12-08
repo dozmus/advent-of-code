@@ -16,10 +16,28 @@ class MyTestCase(unittest.TestCase):
 
         self.assertEqual(expected, actual)
 
-    def test_can_assign(self):
+    def test_can_handle_add_literal_negative(self):
+        expected = [1101, 0, 0, 11, 1101, -1, 0, 12, 4, 12, 99, 0, 0]
+
+        code = '''x = 0
+                  y = -1
+                  print(y)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_can_assign_literal(self):
         expected = [1101, 5, 0, 5, 99, 0]
 
         code = 'x = 5'
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_can_assign_negative_literal(self):
+        expected = [1101, -5, 0, 5, 99, 0]
+
+        code = 'x = -5'
         actual = self.compile(code)
 
         self.assertEqual(expected, actual)
