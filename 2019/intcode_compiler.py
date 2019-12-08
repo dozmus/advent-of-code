@@ -3,137 +3,171 @@ import re
 import sys
 
 from benchmark import benchmark
-from custom_io import read_lines
+from custom_io import read
 
 
-def is_str_an_int(s):
+def is_numeric(s):
     return re.match('^-?\\d+$', s)
+
+
+def lexer(code):
+    tokens = []
+    s = ''
+    charNum = 0  # TODO correct this num
+    lineNum = 1
+
+    for c in code:
+        if not c.isspace():
+            s += c
+            charNum += 1
+            continue
+
+        if len(s) > 0:
+            tokens.append((s, charNum, lineNum))
+            s = ''
+
+        if c == '\n':
+            lineNum += 1
+        charNum += 1
+
+    if len(s) > 0:
+        tokens.append((s, charNum, lineNum))
+
+    return tokens
 
 
 class IntCodeCompiler:
     def __init__(self, code):
-        self.lines = code
+        self.code = code
         self.variables = set()
         self.allocated_variables = {}  # variable name to memory location
+        self.program = []
+
+    def parse_assign(self, variable, value, lineNum):
+        """ Implemented as adding N + 0. """
+        opcode = 1
+        self.variables.add(variable)
+
+        if is_numeric(variable):
+            raise Exception(f'{lineNum}: You cannot assign to a literal: {variable}')
+
+        if not is_numeric(value):
+            if value not in self.variables:
+                raise Exception(f'{lineNum}: You cannot access a variable before it is declared: {value}')
+            parsed_value = value
+        else:
+            opcode += 100
+            parsed_value = int(value)
+
+        opcode += 1000  # second number is a constant
+
+        self.program.append(opcode)
+        self.program.append(parsed_value)
+        self.program.append(0)
+        self.program.append(variable)
+
+    def parse_input(self, variable, lineNum):
+        opcode = 3
+
+        if is_numeric(variable):
+            raise Exception(f'{lineNum}: You cannot assign a value to a literal value {variable}')
+
+        self.variables.add(variable)
+        self.program.append(opcode)
+        self.program.append(variable)
+
+    def parse_print(self, symbol, lineNum):
+        opcode = 4
+        argument = symbol[6:-1]
+
+        if not is_numeric(argument):
+            if argument not in self.variables:
+                raise Exception(f'{lineNum}: You cannot access a variable before it is declared: {argument}')
+            value = argument
+            self.variables.add(argument)
+        else:
+            opcode += 100
+            value = int(argument)
+
+        self.program.append(opcode)
+        self.program.append(value)
+
+    def parse_math_and_assign(self, operation, variable, lhs, rhs, lineNum):
+        opcode = 1 if operation == '+' else 2
+        self.variables.add(variable)
+
+        if not is_numeric(lhs):
+            if lhs not in self.variables:
+                raise Exception(f'{lineNum}: You cannot access a variable before it is declared: {lhs}')
+            parsed_lhs = lhs
+        else:
+            opcode += 100
+            parsed_lhs = int(lhs)
+
+        if not is_numeric(rhs):
+            if rhs not in self.variables:
+                raise Exception(f'{lineNum}: You cannot access a variable before it is declared: {rhs}')
+            parsed_rhs = rhs
+        else:
+            opcode += 1000
+            parsed_rhs = int(rhs)
+
+        self.program.append(opcode)
+        self.program.append(parsed_lhs)
+        self.program.append(parsed_rhs)
+        self.program.append(variable)
 
     @benchmark
     def compile(self):
-        program = []
+        tokens = lexer(self.code)
 
-        for lineNo, line in enumerate(self.lines):
-            line = line.strip()
+        for i, token in enumerate(tokens):
+            symbol = token[0]
+            lineNum = token[2]
 
-            if '+' in line or '*' in line:
-                opcode = 1 if '+' in line else 2
-                lex = line.split(' ')
+            if symbol == '=':
+                if i == 0:
+                    raise Exception(f'{lineNum}: Unexpected =')
 
-                variable = lex[0]
-                self.variables.add(variable)
-
-                l = lex[2]
-                r = lex[4]
-
-                if not is_str_an_int(l):
-                    if l not in self.variables:
-                        raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {l}')
-                    l_val = l
+                if tokens[i + 1][0] == 'input()':
+                    self.parse_input(tokens[i - 1][0], lineNum)
+                    i += 1
+                    continue
+                elif i + 2 < len(tokens) and tokens[i + 2][0] in ['+', '*']:
+                    self.parse_math_and_assign(tokens[i + 2][0], tokens[i - 1][0], tokens[i + 1][0], tokens[i + 3][0], lineNum)
+                    i += 3
+                    continue
                 else:
-                    opcode += 100
-                    l_val = int(l)
+                    self.parse_assign(tokens[i - 1][0], tokens[i + 1][0], lineNum)
+                    i += 1
+                    continue
 
-                if not is_str_an_int(r):
-                    if r not in self.variables:
-                        raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {r}')
-                    r_val = r
-                else:
-                    opcode += 1000
-                    r_val = int(r)
-
-                program.append(opcode)
-                program.append(l_val)
-                program.append(r_val)
-                program.append(variable)
+            if symbol.startswith('print'):
+                self.parse_print(symbol, lineNum)
                 continue
 
-            if line.startswith('print'):
-                opcode = 4
-                argument = line[6:-1]
+        self.program.append(99)  # halt
+        self.allocate_variables_pointers()
+        self.update_variables_pointers()
+        return self.program
 
-                if not is_str_an_int(argument):
-                    if argument not in self.variables:
-                        raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {variable}')
-                    value = argument
-                    self.variables.add(argument)
-                else:
-                    opcode += 100
-                    value = int(argument)
-
-                program.append(opcode)
-                program.append(value)
-                continue
-
-            if line.endswith(' = input()'):
-                opcode = 3
-                variable = line.split('=')[0].strip()
-
-                if is_str_an_int(variable):
-                    raise Exception(f'{lineNo}: You cannot assign a value to a literal value {variable}')
-
-                self.variables.add(variable)
-                program.append(opcode)
-                program.append(variable)
-                continue
-
-            if '=' in line:  # assignment
-                opcode = 1
-                lex = line.split(' ')
-
-                variable = lex[0].strip()
-                self.variables.add(variable)
-
-                if is_str_an_int(variable):
-                    raise Exception(f'{lineNo}: You cannot assign to a literal: {variable}')
-
-                src = lex[2].strip()
-
-                if not is_str_an_int(src):
-                    if src not in self.variables:
-                        raise Exception(f'{lineNo}: You cannot access a variable before it is declared: {src}')
-                    src_val = src
-                else:
-                    opcode += 100
-                    src_val = int(src)
-
-                opcode += 1000  # second number is a constant
-
-                program.append(opcode)
-                program.append(src_val)
-                program.append(0)
-                program.append(variable)
-                continue
-
-        program.append(99)
-        self.allocate_variables_pointers(program)
-        self.update_variables_pointers(program)
-        return program
-
-    def allocate_variables_pointers(self, program):
-        start_ptr = len(program)
+    def allocate_variables_pointers(self):
+        start_ptr = len(self.program)
 
         for variable in sorted(self.variables):  # for a consistent order, so our tests will not be fragile
             self.allocated_variables[variable] = start_ptr
-            program.append(0)  # initialize variable memory locations to 0
+            self.program.append(0)  # initialize variable memory locations to 0
             start_ptr += 1
 
-    def update_variables_pointers(self, program):
-        for i, val in enumerate(program):
+    def update_variables_pointers(self):
+        for i, val in enumerate(self.program):
             if isinstance(val, str):
-                program[i] = self.allocated_variables[val]
+                self.program[i] = self.allocated_variables[val]
 
 
 if __name__ == '__main__':
     code_file = sys.argv[1]
-    code = read_lines(code_file)
+    code = read(code_file)
 
     compiler = IntCodeCompiler(code)
     program = compiler.compile()

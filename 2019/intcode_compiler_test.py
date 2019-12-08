@@ -5,13 +5,21 @@ from .intcode_compiler import IntCodeCompiler
 
 class MyTestCase(unittest.TestCase):
     def compile(self, code):
-        compiler = IntCodeCompiler(code.split('\n'))
+        compiler = IntCodeCompiler(code)
         return compiler.compile()
 
     def test_can_add_literals(self):
         expected = [1101, 1, 2, 5, 99, 0]
 
         code = 'x = 1 + 2'
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_can_multiply_literals(self):
+        expected = [1102, 1, 2, 5, 99, 0]
+
+        code = 'x = 1 * 2'
         actual = self.compile(code)
 
         self.assertEqual(expected, actual)
@@ -63,6 +71,14 @@ class MyTestCase(unittest.TestCase):
         expected = [104, 1, 99]
 
         code = '''print(1)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_assign_from_input(self):
+        expected = [3, 3, 99, 0]
+
+        code = '''x = input()'''
         actual = self.compile(code)
 
         self.assertEqual(expected, actual)
