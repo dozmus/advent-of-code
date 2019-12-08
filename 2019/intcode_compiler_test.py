@@ -83,6 +83,50 @@ class MyTestCase(unittest.TestCase):
 
         self.assertEqual(expected, actual)
 
+    def test_if_statement_less_than(self):
+        expected = [1107, 1, 2, 12, 6, 12, 9, 104, 1, 104, 0, 99, 0]
+
+        code = '''if 1 < 2 then
+                    print(1)
+                  endif
+                  print(0)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_if_statement_equals(self):
+        expected = [1108, 1, 1, 12, 6, 12, 9, 104, 1, 104, 0, 99, 0]
+
+        code = '''if 1 == 1 then
+                    print(1)
+                  endif
+                  print(0)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_negated_if_statement_less_than(self):
+        expected = [1107, 1, 2, 12, 5, 12, 9, 104, 1, 104, 0, 99, 0]
+
+        code = '''if not 1 < 2 then
+                    print(1)
+                  endif
+                  print(0)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
+    def test_negated_if_statement_equals(self):
+        expected = [1108, 1, 1, 12, 5, 12, 9, 104, 1, 104, 0, 99, 0]
+
+        code = '''if not 1 == 1 then
+                    print(1)
+                  endif
+                  print(0)'''
+        actual = self.compile(code)
+
+        self.assertEqual(expected, actual)
+
 
 if __name__ == '__main__':
     unittest.main()

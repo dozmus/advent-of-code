@@ -40,7 +40,10 @@ class IntCodeCompiler:
     def __init__(self, code):
         self.code = code
         self.variables = set()
+        self.to_process = []  # program indexes to post-process
+        self.dynamic_allocations = {}
         self.allocated_variables = {}  # variable name to memory location
+        self.dynamic_alloc_ptr = 0
         self.program = []
 
     def parse_assign(self, variable, value, lineNum):
@@ -92,9 +95,14 @@ class IntCodeCompiler:
         self.program.append(opcode)
         self.program.append(value)
 
-    def parse_math_and_assign(self, operation, variable, lhs, rhs, lineNum):
-        opcode = 1 if operation == '+' else 2
-        self.variables.add(variable)
+    def parse_binary_operation(self, operation, lhs, rhs, lineNum):
+        opcode_map = {
+            '+': 1,
+            '*': 2,
+            '<': 7,
+            '==': 8
+        }
+        opcode = opcode_map[operation]  # TODO else exception
 
         if not is_numeric(lhs):
             if lhs not in self.variables:
@@ -112,39 +120,92 @@ class IntCodeCompiler:
             opcode += 1000
             parsed_rhs = int(rhs)
 
-        self.program.append(opcode)
-        self.program.append(parsed_lhs)
-        self.program.append(parsed_rhs)
+        return (opcode, parsed_lhs, parsed_rhs)
+
+    def parse_math_and_assign(self, operation, variable, lhs, rhs, lineNum):
+        self.variables.add(variable)
+
+        parsed = self.parse_binary_operation(operation, lhs, rhs, lineNum)
+
+        self.program.append(parsed[0])
+        self.program.append(parsed[1])
+        self.program.append(parsed[2])
         self.program.append(variable)
+
+    def parse_if_statement(self, tokens, i):
+        negated = tokens[i + 1][0] == 'not'
+
+        # Comparison
+        comparator_idx = i + (3 if negated else 2)
+        comp_token = tokens[comparator_idx]
+        lhs = tokens[comparator_idx - 1][0]
+        rhs = tokens[comparator_idx + 1][0]
+        parsed_comparison = self.parse_binary_operation(comp_token[0], lhs, rhs, comp_token[2])
+
+        self.program.append(parsed_comparison[0])
+        self.program.append(parsed_comparison[1])
+        self.program.append(parsed_comparison[2])
+        self.program.append('$alloc_loc' + str(self.dynamic_alloc_ptr))
+        self.to_process.append(len(self.program) - 1)
+
+        # If
+        self.program.append(5 if negated else 6)  # jump to end of if block, if its false
+        self.program.append('$alloc_loc' + str(self.dynamic_alloc_ptr))
+        self.to_process.append(len(self.program) - 1)
+        self.program.append('$endif')  # to endif
+        self.to_process.append(len(self.program) - 1)
+
+        self.dynamic_alloc_ptr += 1
+
+        return 6 if negated else 5  # skip parsed token count
+
+    def parse_end_if(self, lineNum):
+        for j in reversed(range(len(self.program))):
+            if j in self.to_process and self.program[j] == '$endif':
+                self.to_process.remove(j)
+                self.program[j] = len(self.program)
+                return 0
+        else:
+            raise Exception(f'{lineNum}: Spurious endif')
+
+    def parse_block(self, tokens, i, token):
+        symbol = token[0]
+        lineNum = token[2]
+
+        if symbol == 'if':
+            return self.parse_if_statement(tokens, i)
+
+        if symbol == 'endif':
+            return self.parse_end_if(lineNum)
+
+        if symbol == '=':
+            if i == 0:
+                raise Exception(f'{lineNum}: Unexpected =')
+
+            if tokens[i + 1][0] == 'input()':
+                self.parse_input(tokens[i - 1][0], lineNum)
+                return 1
+            elif i + 2 < len(tokens) and tokens[i + 2][0] in ['+', '*']:
+                self.parse_math_and_assign(tokens[i + 2][0], tokens[i - 1][0], tokens[i + 1][0], tokens[i + 3][0],
+                                           lineNum)
+                return 3
+            else:
+                self.parse_assign(tokens[i - 1][0], tokens[i + 1][0], lineNum)
+                return 1
+
+        if symbol.startswith('print'):
+            self.parse_print(symbol, lineNum)
+            return 0
+
+        return 0
 
     @benchmark
     def compile(self):
         tokens = lexer(self.code)
 
         for i, token in enumerate(tokens):
-            symbol = token[0]
-            lineNum = token[2]
-
-            if symbol == '=':
-                if i == 0:
-                    raise Exception(f'{lineNum}: Unexpected =')
-
-                if tokens[i + 1][0] == 'input()':
-                    self.parse_input(tokens[i - 1][0], lineNum)
-                    i += 1
-                    continue
-                elif i + 2 < len(tokens) and tokens[i + 2][0] in ['+', '*']:
-                    self.parse_math_and_assign(tokens[i + 2][0], tokens[i - 1][0], tokens[i + 1][0], tokens[i + 3][0], lineNum)
-                    i += 3
-                    continue
-                else:
-                    self.parse_assign(tokens[i - 1][0], tokens[i + 1][0], lineNum)
-                    i += 1
-                    continue
-
-            if symbol.startswith('print'):
-                self.parse_print(symbol, lineNum)
-                continue
+            del_i = self.parse_block(tokens, i, token)
+            i += del_i
 
         self.program.append(99)  # halt
         self.allocate_variables_pointers()
@@ -159,9 +220,19 @@ class IntCodeCompiler:
             self.program.append(0)  # initialize variable memory locations to 0
             start_ptr += 1
 
+        for i in sorted(self.to_process):
+            value = self.program[i]
+
+            if value.startswith('$alloc_loc') and value not in self.dynamic_allocations:
+                self.dynamic_allocations[value] = start_ptr
+                self.program.append(0)
+                start_ptr += 1
+
     def update_variables_pointers(self):
         for i, val in enumerate(self.program):
-            if isinstance(val, str):
+            if i in self.to_process:
+                self.program[i] = self.dynamic_allocations[val]
+            elif isinstance(val, str):
                 self.program[i] = self.allocated_variables[val]
 
 
